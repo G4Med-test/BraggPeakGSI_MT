@@ -1,0 +1,75 @@
+#==================================================
+# BraggPeakGSI_MT macro for G4MSBG regression test
+# C12 @ 400 MeV/u, sigma(E)/E = 0.0003
+# QGSP_BIC_HP_EMY reference PL
+#==================================================
+
+/random/setSeeds 100 001
+
+/control/verbose 1
+/run/verbose 1
+
+########################
+### WATER PROPERTIES ###
+########################
+# Correction due to room temperature
+/mymat/water/density   0.997 g/cm3
+
+###########################
+### SETUP CONFIGURATION ###
+###########################
+/mygeom/setup         0
+/mygeom/waterTankXY  20. cm
+/mygeom/waterTankZ   30. cm
+/mygeom/cell/radius  28. mm
+/mygeom/cell/height   0.050 mm
+/mygeom/cell/detailedLowDepth    265 mm
+/mygeom/cell/detailedHighDepth   285 mm
+/mygeom/cell/spacing   20
+/mygeom/addSensitiveLVs  Cell
+/mygeom/addROIs  Roi
+
+####################
+### PHYSICS LIST ###
+####################
+/physics/referencePL  QGSP_BIC_HP_EMY
+
+##################################
+### PRODUCTION CUT DEFINITIONS ###
+##################################
+/physics/gammaCut     0.5 mm
+/physics/electronCut  0.5 mm
+/physics/positronCut  0.5 mm
+/physics/gammaCutInROI     0.025 mm
+/physics/electronCutInROI  0.025 mm
+/physics/positronCutInROI  0.025 mm
+
+######################
+### INITIALIZATION ###
+######################
+/run/initialize
+
+
+#######################
+### PRODUCTION CUTS ###
+#######################
+/run/particle/applyCuts true e-
+/run/particle/applyCuts true gamma
+
+/beam/ion   6  12  0
+
+/beam/position/centralX  0.0 mm
+/beam/position/centralY  0.0 mm
+/beam/position/centralZ  0.0 mm
+
+/beam/energy/mean   4800.0 MeV
+/beam/energy/sigma  1.4400 MeV
+
+################################
+### CONFIG OUTPUT & MAKE RUN ###
+################################
+
+/output/runHitsFileName  output
+/tracking/verbose  0
+/run/printProgress 1000
+/run/beamOn  10000

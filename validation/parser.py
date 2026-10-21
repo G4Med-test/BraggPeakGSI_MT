@@ -1,75 +1,59 @@
-"""Turns the output of one validation run into plots for the Geant Validation Portal.
+#!/usr/bin/env python
 
-The CI imports this file and calls two functions, once for every macro listed in
-validation/config.json:
+# BraggPeakGSI_MT portal parser: metadata() reads the macro, parse() the
+# captured output_0.out depth-dose table.
+#
+# Ported from geant-config-generator/tests/geant4/BraggPeakGSI_MT/parser.py
+# (gts.BaseParser) to the module-level metadata()/parse() API expected by
+# ci-workflows/validation/export.py.
+import os
 
-1. metadata(commands)  BEFORE the simulation: describe the run from its macro.
-2. parse(job)          AFTER the simulation: read the output files, return plots.
-
-You only have to edit the lines marked TODO. Example with macro/example.mac:
-
-    commands = [("/myapp/phys/addPhysics", "FTFP_BERT"), ("/run/initialize", ""),
-                ("/gun/particle", "proton"), ("/gun/energy", "100 MeV"), ...]
-
-    metadata(commands) -> {"TEST": "MyTest", "PHYSICS_LIST": "FTFP_BERT",
-                           "PARTICLE": "proton", "ENERGY": 100.0}
-
-    job = that dict + {"path": "<directory of the run>", "VERSION": "11.3.2"}
-    parse(job) -> one plot per `yield`
-
-The run directory contains the files your application wrote with relative names
-(here result.txt) and the captured standard output (test_stdout.txt).
-
-Helpers from ci-workflows/validation/geantval.py:
-- one_command(commands, "/cmd"): value of a command that appears exactly once
-  (error if missing or repeated, so the metadata always matches the macro);
-- energy_mev("100 MeV"): energy in MeV;
-- getJSON(job, ...): builds one plot in the portal format (see parse below).
-"""
-from pathlib import Path
-
-from geantval import energy_mev, getJSON, one_command
+from geantval import getJSON, one_command, single_run
 
 
 def metadata(commands):
-    """Describe one run, reading every setting from its macro.
+    single_run(commands)
+    beam_energy = one_command(commands, "/beam/energy/mean").split()[0]
+    ion = one_command(commands, "/beam/ion", default=None)
+    beam = "C12" if ion is not None and ion.split()[:2] == ["6", "12"] else ion
+    return {"TEST": "BraggPeakGSI_MT",
+            "PHYSLIST": one_command(commands, "/physics/referencePL"),
+            "BEAM": beam,
+            "BEAM_ENERGY_MEV": float(beam_energy)}
 
-    The returned dict must contain "TEST" (the test name shown on the portal);
-    add whatever parse() needs. Raise an error if the macro is not suitable.
-    """
-    return {
-        "TEST": "MyTest",  # TODO: your test name
-        "PHYSICS_LIST": one_command(commands, "/myapp/phys/addPhysics"),  # TODO: your command
-        "PARTICLE": one_command(commands, "/gun/particle"),
-        "ENERGY": energy_mev(one_command(commands, "/gun/energy")),
-    }
+
+def read_output(filename):
+    x, y, yerr = [], [], []
+    with open(filename) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("#"):
+                continue
+            if not line:
+                break
+            fields = [float(v) for v in line.split()]
+            y.append(fields[1])
+            yerr.append(fields[2] * fields[1])
+            x.append(fields[5])
+    if not x:
+        raise ValueError("No data rows found in " + filename)
+    return x, y, yerr
 
 
 def parse(job):
-    """Read the output of the run in job["path"] and yield one plot per `yield`."""
-    # TODO: read your output file. This example expects two columns, x and y,
-    # one point per line; lines starting with # are comments.
-    x, y = [], []
-    for line in (Path(job["path"]) / "result.txt").read_text().splitlines():
-        if line.strip() and not line.startswith("#"):
-            x_value, y_value = line.split()
-            x.append(float(x_value))
-            y.append(float(y_value))
-
-    # "chart" is a set of points (x, y). For a histogram use "histogram" with
-    # binEdgeLow, binEdgeHigh and binContent instead of xValues and yValues.
-    # Optional uncertainties: yStatErrorsPlus/Minus, ySysErrorsPlus/Minus.
-    yield getJSON(
-        job, "chart",
-        mctool_name="GEANT4",
-        mctool_model=job["PHYSICS_LIST"],
-        observableName="TODO observable",  # e.g. "attenuation coefficient"
-        targetName="TODO target",          # e.g. "water"
-        beamParticle=job["PARTICLE"],
-        beamEnergies=[job["ENERGY"]],      # MeV
-        title="TODO title",
-        xAxisName="TODO x, unit",
-        yAxisName="TODO y, unit",
-        xValues=x,
-        yValues=y,
-    )
+    x, y, yerr = read_output(os.path.join(job["path"], "output_0.out"))
+    rjson = getJSON(job, "chart",
+                     mctool_name="GEANT4",
+                     mctool_model=job["PHYSLIST"],
+                     observableName="energy deposition",
+                     targetName="water",
+                     beamParticle=job["BEAM"],
+                     beamEnergies=[job["BEAM_ENERGY_MEV"]],
+                     title="E_{dep} in water",
+                     xAxisName="Depth in water, mm",
+                     yAxisName="E_{dep}, a.u.",
+                     xValues=x,
+                     yValues=y,
+                     yStatErrorsPlus=yerr,
+                     yStatErrorsMinus=yerr)
+    yield rjson

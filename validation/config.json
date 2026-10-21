@@ -1,3 +1,5 @@
 {
-  "macros": ["example.mac"]
+  "macros": [
+    "C12_400MeVu_QGSP_BIC_HP_EMY.mac"
+  ]
 }
